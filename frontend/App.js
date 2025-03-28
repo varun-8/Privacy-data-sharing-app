@@ -3,8 +3,9 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { UrlProvider } from './urlContext';
 import { UserProvider } from './userContext';
-import { View, Text, StyleSheet, ActivityIndicator, Animated, Easing, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // For back button icon
+import { View, Text, StyleSheet, Animated, Easing, Image, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
 
 // Super Admin Screens
 import Sdash from './pages/superadmin/Sdash';
@@ -14,6 +15,7 @@ import ManageUsers from './pages/superadmin/ManageUsers';
 import ViewRequests from './pages/superadmin/ViewRequests';
 import ManageGroups from './pages/superadmin/ManageGroups';
 import Settings from './pages/superadmin/Settings';
+import FailedLogins from './pages/superadmin/FailedLogins';
 
 // User Screens
 import UserRegister from './pages/user/UserRegister';
@@ -23,26 +25,56 @@ import ViewYourGroups from './pages/user/ViewYourGroups';
 import ViewUserRequests from './pages/user/ViewRequests';
 import ViewAllGroups from './pages/user/ViewAllGroups';
 import ViewJoinRequests from './pages/user/ViewJoinRequests';
-import ShareFiles from './pages/user/ShareFiles';
-import SeeFiles from './pages/user/SeeFiles';
+import GroupChat from './pages/user/GroupChat';
+import SeeFiles from './pages/user/SeeFiles';     // Added SeeFiles
+import ShareFiles from './pages/user/ShareFiles'; // Added ShareFiles
 
 // Splash Screen Component
 const SplashScreen = () => {
   const [fadeAnim] = useState(new Animated.Value(1));
+  const [scaleAnim] = useState(new Animated.Value(0.9));
+  const [rotateAnim] = useState(new Animated.Value(0));
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 500,
-      delay: 2500,
-      useNativeDriver: true,
-    }).start();
-  }, []);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 400,
+        delay: 1200,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 50,
+        useNativeDriver: true,
+      }),
+      Animated.loop(
+        Animated.timing(rotateAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ),
+    ]).start();
+  }, [fadeAnim, scaleAnim, rotateAnim]);
+
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <Animated.View style={[styles.splashContainer, { opacity: fadeAnim }]}>
-      <Text style={styles.logoText}>Data Sharing App</Text>
-      <ActivityIndicator size="large" color="#FFD700" style={styles.loader} />
+      <Animated.Image
+        source={require('./assets/icon.png')}
+        style={[styles.logoImage, { transform: [{ scale: scaleAnim }] }]}
+      />
+      <Text style={styles.splashText}>Secure File Sharing</Text>
+      <Animated.View style={[styles.loaderContainer, { transform: [{ rotate: spin }] }]}>
+        <Ionicons name="reload-outline" size={24} color="#14B8A6" />
+      </Animated.View>
     </Animated.View>
   );
 };
@@ -54,8 +86,8 @@ const MyTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    primary: '#1E3A8A',
-    background: '#F3F4F6',
+    primary: '#6366F1',
+    background: '#F9FAFB',
     card: '#FFFFFF',
     text: '#1F2937',
     border: '#D1D5DB',
@@ -65,58 +97,57 @@ const MyTheme = {
 // Custom Header with Back Button
 const getHeaderOptions = (navigation, route) => ({
   headerStyle: {
-    backgroundColor: '#1E3A8A',
-    elevation: 5,
+    backgroundColor: '#6366F1',
+    elevation: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
-  headerTintColor: '#FFD700',
+  headerTintColor: '#FFFFFF',
   headerTitleStyle: {
-    fontWeight: 'bold',
     fontSize: 20,
+    fontFamily: 'Roboto-Medium',
+    fontWeight: '600',
   },
   headerLeft: () => (
     <TouchableOpacity
       style={styles.headerButton}
       onPress={() => {
-        // Reset login screens when navigating back
         if (route.name === 'slogin' || route.name === 'userlogin') {
-          navigation.replace(route.name); // Replace to reset state
+          navigation.replace(route.name);
         } else {
           navigation.goBack();
         }
       }}
     >
-      <Ionicons name="arrow-back" size={24} color="#FFD700" />
+      <Ionicons name="arrow-back-outline" size={24} color="#FFFFFF" />
     </TouchableOpacity>
   ),
-  // Hide back button on initial screens
   headerLeftContainerStyle: {
-    paddingLeft: 10,
+    paddingLeft: 12,
   },
 });
 
-// Custom Transition Animation
+// Fast and Professional Transition Animation
 const screenOptions = {
   cardStyle: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
   },
   transitionSpec: {
     open: {
       animation: 'timing',
       config: {
-        duration: 400,
-        easing: Easing.out(Easing.poly(4)),
+        duration: 250,
+        easing: Easing.out(Easing.ease),
       },
     },
     close: {
       animation: 'timing',
       config: {
-        duration: 400,
-        easing: Easing.in(Easing.poly(4)),
+        duration: 200,
+        easing: Easing.in(Easing.ease),
       },
     },
   },
@@ -126,19 +157,25 @@ const screenOptions = {
         {
           translateX: current.progress.interpolate({
             inputRange: [0, 1],
-            outputRange: [layouts.screen.width, 0],
+            outputRange: [layouts.screen.width * 0.8, 0],
+          }),
+        },
+        {
+          scale: current.progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.95, 1],
           }),
         },
       ],
       opacity: current.progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 1],
+        inputRange: [0, 0.5, 1],
+        outputRange: [0, 0.8, 1],
       }),
     },
     overlayStyle: {
       opacity: current.progress.interpolate({
         inputRange: [0, 1],
-        outputRange: [0, 0.5],
+        outputRange: [0, 0.3],
       }),
     },
   }),
@@ -147,12 +184,31 @@ const screenOptions = {
 export default function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
 
+  // Load Roboto fonts
+  let [fontsLoaded] = useFonts({
+    'Roboto-Regular': Roboto_400Regular,
+    'Roboto-Medium': Roboto_500Medium,
+    'Roboto-Bold': Roboto_700Bold,
+    'Poppins-Regular': require('./assets/fonts/Poppins-Regular.ttf'),
+    'Poppins-Medium': require('./assets/fonts/Poppins-Medium.ttf'),
+    'Poppins-SemiBold': require('./assets/fonts/Poppins-SemiBold.ttf'),
+    'Poppins-ExtraBoldItalic': require('./assets/fonts/Poppins-ExtraBoldItalic.ttf'),
+  });
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsSplashVisible(false);
-    }, 3000);
+    }, 1600);
     return () => clearTimeout(timer);
   }, []);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.fontLoadingContainer}>
+        <Ionicons name="lock-closed-outline" size={40} color="#6366F1" />
+      </View>
+    );
+  }
 
   return (
     <UrlProvider>
@@ -167,16 +223,16 @@ export default function App() {
                 name="slogin"
                 component={Slogin}
                 options={({ navigation, route }) => ({
-                  title: 'Super Admin Login',
+                  title: 'Admin Login',
                   ...getHeaderOptions(navigation, route),
-                  headerLeft: null, // No back button on initial screen
+                  headerLeft: null,
                 })}
               />
               <Stack.Screen
                 name="sdash"
                 component={Sdash}
                 options={({ navigation, route }) => ({
-                  title: 'Super Admin Dashboard',
+                  title: 'Admin Dashboard',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -184,7 +240,7 @@ export default function App() {
                 name="sregister"
                 component={Sregister}
                 options={({ navigation, route }) => ({
-                  title: 'Super Admin Register',
+                  title: 'Admin Register',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -220,13 +276,21 @@ export default function App() {
                   ...getHeaderOptions(navigation, route),
                 })}
               />
+              <Stack.Screen
+                name="failedlogins"
+                component={FailedLogins}
+                options={({ navigation, route }) => ({
+                  title: 'Failed Logins',
+                  ...getHeaderOptions(navigation, route),
+                })}
+              />
 
               {/* User Screens */}
               <Stack.Screen
                 name="userregister"
                 component={UserRegister}
                 options={({ navigation, route }) => ({
-                  title: 'User Register',
+                  title: 'Sign Up',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -234,16 +298,16 @@ export default function App() {
                 name="userlogin"
                 component={UserLogin}
                 options={({ navigation, route }) => ({
-                  title: 'User Login',
+                  title: 'Login',
                   ...getHeaderOptions(navigation, route),
-                  headerLeft: null, // No back button on initial screen
+                  headerLeft: null,
                 })}
               />
               <Stack.Screen
                 name="userdash"
                 component={UserDash}
                 options={({ navigation, route }) => ({
-                  title: 'User Dashboard',
+                  title: 'Dashboard',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -251,7 +315,7 @@ export default function App() {
                 name="viewyourgroups"
                 component={ViewYourGroups}
                 options={({ navigation, route }) => ({
-                  title: 'Your Groups',
+                  title: 'My Groups',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -259,7 +323,7 @@ export default function App() {
                 name="viewallgroups"
                 component={ViewAllGroups}
                 options={({ navigation, route }) => ({
-                  title: 'All Groups',
+                  title: 'Explore Groups',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -267,7 +331,7 @@ export default function App() {
                 name="viewuserrequests"
                 component={ViewUserRequests}
                 options={({ navigation, route }) => ({
-                  title: 'Requests',
+                  title: 'My Requests',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -280,10 +344,10 @@ export default function App() {
                 })}
               />
               <Stack.Screen
-                name="sharefiles"
-                component={ShareFiles}
+                name="groupchat"
+                component={GroupChat}
                 options={({ navigation, route }) => ({
-                  title: 'Share Files',
+                  title: 'Group Chat',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -292,6 +356,14 @@ export default function App() {
                 component={SeeFiles}
                 options={({ navigation, route }) => ({
                   title: 'See Files',
+                  ...getHeaderOptions(navigation, route),
+                })}
+              />
+              <Stack.Screen
+                name="sharefiles"
+                component={ShareFiles}
+                options={({ navigation, route }) => ({
+                  title: 'Share Files',
                   ...getHeaderOptions(navigation, route),
                 })}
               />
@@ -308,43 +380,34 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1E3A8A',
+    backgroundColor: '#FFFFFF',
   },
-  logoText: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: '#FFD700',
+  logoImage: {
+    width: 300,
+    height: 300,
+    marginBottom: 20,
+  },
+  splashText: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: '#6366F1',
     textAlign: 'center',
-    fontFamily: 'Poppins-Bold', // Assuming font is loaded
+    fontFamily: 'Roboto-Bold',
+    marginBottom: 20,
   },
-  loader: {
-    marginTop: 25,
+  loaderContainer: {
+    padding: 10,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 50,
+    elevation: 2,
   },
-  headerContainer: {
-    flexDirection: 'row',
+  fontLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    height: 80, // Larger header for prominence
-    backgroundColor: '#1E3A8A', // Solid deep blue
-    paddingHorizontal: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    backgroundColor: '#F9FAFB',
   },
   headerButton: {
-    padding: 15, // Increased for better touch area and balance
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 24, // Larger for readability
-    fontWeight: '700',
-    color: '#FFD700', // Gold for contrast
-    textAlign: 'center',
-    fontFamily: 'Poppins-Bold', // Custom font for professionalism
-    letterSpacing: 0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+    padding: 12,
   },
 });
