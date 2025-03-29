@@ -12,7 +12,7 @@ from flask_mail import Mail, Message
 from settings import settings_bp
 from db import (superadmin_collection, user_collection, requests_collection, 
                 groups_collection, join_collection, files_collection, 
-                failed_logins_collection)
+                failed_logins_collection, messages_collection,settings_collection)  # Added messages_collection
 from failed_logins import failed_logins_bp
 from ip_management import ip_management_bp, is_ip_blocked
 from groups import groups_bp
@@ -30,6 +30,11 @@ app.register_blueprint(settings_bp)
 app.register_blueprint(failed_logins_bp)
 app.register_blueprint(ip_management_bp)
 app.register_blueprint(groups_bp)
+
+
+
+
+
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
@@ -549,7 +554,6 @@ def getfiles(gid):
                     logger.error(f"Failed to decrypt message for file {str(file['_id'])}: {str(e)}")
                     decrypted_message = "[Decryption Failed]"
             
-            # Fetch user name based on email
             user_info = user_collection.find_one({"email": file.get('user')})
             user_name = user_info.get('name', file.get('user')) if user_info else file.get('user')
 
@@ -560,8 +564,8 @@ def getfiles(gid):
                 'mime_type': file.get('mime_type'),
                 'group_id': file.get('group_id', file.get('group')),
                 'group': file.get('group', file.get('group_id')),
-                'user': file.get('user'),  # Still include email for reference
-                'user_name': user_name,    # Add user name
+                'user': file.get('user'),
+                'user_name': user_name,
                 'message': decrypted_message,
                 'upload_date': file['upload_date'].isoformat()
             }
@@ -572,18 +576,84 @@ def getfiles(gid):
         logger.error(f"Error in getfiles: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# ... (Previous imports and setup remain unchanged)
+
+@app.route('/getchatmessages/<string:gid>', methods=["GET"])
+def get_chat_messages(gid):
+    try:
+        # Fetch the last 50 messages for the group, sorted by timestamp (latest first)
+        messages = list(messages_collection.find({"group_id": gid})
+                        .sort("timestamp", -1)
+                        .limit(50))
+        decrypted_messages = []
+        for msg in messages:
+            try:
+                # Decrypt the message using Fernet
+                decrypted_message = cipher_suite.decrypt(msg["message"].encode('utf-8')).decode('utf-8')
+            except Exception as e:
+                logger.error(f"Failed to decrypt message {str(msg['_id'])}: {str(e)}")
+                decrypted_message = "[Decryption Failed]"
+
+            # Handle timestamp gracefully
+            timestamp = msg.get("timestamp")
+            if timestamp and isinstance(timestamp, datetime.datetime):
+                timestamp_str = timestamp.isoformat()
+            else:
+                # Fallback to current time if timestamp is missing or invalid
+                timestamp_str = datetime.datetime.utcnow().isoformat()
+                logger.warning(f"Invalid or missing timestamp for message {str(msg['_id'])}, using current time: {timestamp_str}")
+
+            decrypted_messages.append({
+                "_id": str(msg["_id"]),
+                "group_id": msg["group_id"],
+                "user": msg["user"],
+                "message": decrypted_message,
+                "timestamp": timestamp_str
+            })
+        logger.info(f"Fetched {len(decrypted_messages)} messages for group {gid}")
+        return jsonify({"messages": decrypted_messages}), 200
+    except Exception as e:
+        logger.error(f"Error in get_chat_messages: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+# ... (Rest of the code remains unchanged)
+@app.route('/sendchatmessage', methods=["POST"])
+def send_chat_message():
+    try:
+        data = request.json
+        group_id = data.get('group_id')
+        user = data.get('user')
+        message = data.get('message')
+
+        if not all([group_id, user, message]):
+            return jsonify({'message': 'Group ID, user, and message are required'}), 400
+
+        # Encrypt the message using Fernet
+        encrypted_message = cipher_suite.encrypt(message.encode('utf-8')).decode('utf-8')
+
+        message_doc = {
+            "group_id": group_id,
+            "user": user,
+            "message": encrypted_message,
+            "timestamp": datetime.datetime.utcnow()
+        }
+        result = messages_collection.insert_one(message_doc)
+        logger.info(f"Message sent successfully to group {group_id} by {user}, ID: {str(result.inserted_id)}")
+        return jsonify({'message': 'Message sent successfully'}), 200
+    except Exception as e:
+        logger.error(f"Error in send_chat_message: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+    
 @app.route('/download/<string:fid>/<string:cuser>', methods=["GET"])
 def download(fid, cuser):
     try:
         file_metadata = files_collection.find_one({'_id': ObjectId(fid)})
         if not file_metadata:
-            return jsonify({'error': 'File not found in database'}), 404
+            return jsonify({'error': 'File not found'}), 404
 
         encrypted_file_path = file_metadata.get('encrypted_file_path')
-        if encrypted_file_path is None:
-            return jsonify({'error': 'File path not found in database'}), 400
         if not os.path.exists(encrypted_file_path):
-            return jsonify({'error': 'Encrypted file not found on server at: ' + encrypted_file_path}), 404
+            return jsonify({'error': 'Encrypted file not found on server'}), 404
 
         with open(encrypted_file_path, 'rb') as f:
             encrypted_data = f.read()
@@ -601,6 +671,7 @@ def download(fid, cuser):
         msg.attach(file_name, file_metadata['mime_type'], decrypted_file_data)
 
         mail.send(msg)
+
         return jsonify({'message': 'Decrypted file sent successfully'}), 200
     except Exception as e:
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
@@ -695,7 +766,47 @@ def get_server_health():
         logger.error(f"Error in get_server_health: {str(e)}")
         return jsonify({'error': str(e)}), 500
     
-    
+# In file_cleanup.py, ensure this endpoint is present
+@app.route('/download-local/<string:fid>', methods=["GET"])
+def download_local(fid):
+    try:
+        file_metadata = files_collection.find_one({'_id': ObjectId(fid)})
+        if not file_metadata:
+            return jsonify({'error': 'File not found'}), 404
+
+        encrypted_file_path = file_metadata.get('encrypted_file_path')
+        if not os.path.exists(encrypted_file_path):
+            return jsonify({'error': 'Encrypted file not found on server'}), 404
+
+        with open(encrypted_file_path, 'rb') as f:
+            encrypted_data = f.read()
+
+        decrypted_file_data = cipher_suite.decrypt(encrypted_data)
+        file_name = file_metadata['file_name']
+
+        return send_file(
+            io.BytesIO(decrypted_file_data),
+            mimetype=file_metadata['mime_type'],
+            as_attachment=True,
+            download_name=file_name
+        )
+    except Exception as e:
+        logging.error(f"Error in download_local: {str(e)}")
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+# Delete All Files
+@app.route("/delete-all-files", methods=["DELETE"])
+def delete_all_files():
+    data = request.get_json()
+    email = data.get("email")
+
+   
+
+    result = files_collection.delete_many({})
+    return jsonify({"message": f"Deleted {result.deleted_count} files successfully"}), 200
+
+# Generate API Key
+
     
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

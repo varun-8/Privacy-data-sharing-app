@@ -101,3 +101,4 @@ if __name__ == "__main__":
     finally:
         client.close()
         logging.info("MongoDB connection closed.")
+

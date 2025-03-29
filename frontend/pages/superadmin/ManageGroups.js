@@ -11,6 +11,8 @@ import {
     TextInput,
     StyleSheet,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function ManageGroups() {
     const { url } = useContext(urlContext);
@@ -18,28 +20,19 @@ export default function ManageGroups() {
     const [newGroup, setNewGroup] = useState({ name: "", admin_email: "" });
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [users, setUsers] = useState([]); // Store all users for mapping IDs to emails
-    const [expandedGroup, setExpandedGroup] = useState(null); // Track which group is expanded
+    const [users, setUsers] = useState([]);
+    const [expandedGroup, setExpandedGroup] = useState(null);
 
     const fetchGroups = async () => {
         setLoading(true);
         try {
-            console.log("Fetching from URL:", `${url}/groups`);
             const res = await axios.get(`${url}/groups`, { timeout: 5000 });
-            console.log("Fetch Groups Response:", res.data);
             const fetchedGroups = res.data.groups || [];
-            if (!Array.isArray(fetchedGroups)) {
-                throw new Error("Response is not an array of groups");
-            }
+            if (!Array.isArray(fetchedGroups)) throw new Error("Invalid groups data");
             setGroups(fetchedGroups);
             setError(null);
         } catch (err) {
-            console.error("Fetch Groups Error:", {
-                message: err.message,
-                response: err.response?.data,
-                status: err.response?.status,
-            });
-            setError(err.response?.data?.error || "Error fetching groups. Please try again.");
+            setError(err.response?.data?.error || "Failed to fetch groups.");
         } finally {
             setLoading(false);
         }
@@ -48,41 +41,29 @@ export default function ManageGroups() {
     const fetchUsers = async () => {
         try {
             const res = await axios.get(`${url}/users`, { timeout: 5000 });
-            console.log("Fetch Users Response:", res.data);
             const fetchedUsers = res.data.users || [];
-            if (!Array.isArray(fetchedUsers)) {
-                throw new Error("Response is not an array of users");
-            }
+            if (!Array.isArray(fetchedUsers)) throw new Error("Invalid users data");
             setUsers(fetchedUsers);
         } catch (err) {
-            console.error("Fetch Users Error:", {
-                message: err.message,
-                response: err.response?.data,
-                status: err.response?.status,
-            });
-            Alert.alert("Error", "Failed to fetch users for member details.");
+            Alert.alert("Error", "Failed to fetch users.");
         }
     };
 
     useEffect(() => {
         fetchGroups();
-        fetchUsers(); // Fetch users once on mount
+        fetchUsers();
     }, []);
 
     const handleAddGroup = async () => {
         if (!newGroup.name || !newGroup.admin_email) {
-            Alert.alert("Error", "Please enter both group name and admin email.");
+            Alert.alert("Missing Fields", "Please enter both group name and admin email.");
             return;
         }
         try {
-            const res = await axios.post(
-                `${url}/add-group`,
-                { name: newGroup.name, admin_email: newGroup.admin_email },
-                {
-                    timeout: 5000,
-                    headers: { "Content-Type": "application/json" },
-                }
-            );
+            const res = await axios.post(`${url}/add-group`, newGroup, {
+                timeout: 5000,
+                headers: { "Content-Type": "application/json" },
+            });
             Alert.alert("Success", res.data.message);
             setNewGroup({ name: "", admin_email: "" });
             fetchGroups();
@@ -91,7 +72,7 @@ export default function ManageGroups() {
         }
     };
 
-    const handleRemoveGroup = async (groupId) => {
+    const handleRemoveGroup = (groupId) => {
         Alert.alert(
             "Confirm Removal",
             "Are you sure you want to remove this group?",
@@ -102,9 +83,7 @@ export default function ManageGroups() {
                     style: "destructive",
                     onPress: async () => {
                         try {
-                            const res = await axios.delete(`${url}/remove-group/${groupId}`, {
-                                timeout: 5000,
-                            });
+                            const res = await axios.delete(`${url}/remove-group/${groupId}`, { timeout: 5000 });
                             Alert.alert("Success", res.data.message);
                             fetchGroups();
                         } catch (err) {
@@ -120,30 +99,39 @@ export default function ManageGroups() {
         setExpandedGroup(expandedGroup === groupId ? null : groupId);
     };
 
-    const getMemberEmails = (memberIds) => {
+    const getAdminName = (adminEmail) => {
+        const user = users.find((u) => u.email === adminEmail);
+        return user ? user.name : adminEmail; // Fallback to email if name not found
+    };
+
+    const getMemberNames = (memberIds) => {
         return memberIds.map((id) => {
             const user = users.find((u) => u.id === id);
-            return user ? user.email : "Unknown User";
+            return user ? user.name : "Unknown User";
         });
     };
 
     const renderGroupItem = ({ item }) => {
-        const memberEmails = getMemberEmails(item.members);
+        const memberNames = getMemberNames(item.members);
+        const adminName = getAdminName(item.admin);
         const isExpanded = expandedGroup === item.id;
 
         return (
             <View style={styles.groupCard}>
-                <TouchableOpacity onPress={() => toggleGroupDetails(item.id)}>
+                <TouchableOpacity style={styles.groupHeader} onPress={() => toggleGroupDetails(item.id)}>
                     <Text style={styles.groupName}>{item.name}</Text>
+                    <Ionicons
+                        name={isExpanded ? "chevron-up" : "chevron-down"}
+                        size={20}
+                        color="#64748B"
+                    />
                 </TouchableOpacity>
-                <Text style={styles.groupAdmin}>Admin: {item.admin}</Text>
+                <Text style={styles.groupAdmin}>Admin: {adminName}</Text>
                 {isExpanded && (
                     <View style={styles.memberDetails}>
-                        <Text style={styles.memberCount}>Members: {item.members.length}</Text>
-                        {memberEmails.map((email, index) => (
-                            <Text key={index} style={styles.memberEmail}>
-                                - {email}
-                            </Text>
+                        <Text style={styles.memberCount}>Members ({item.members.length}):</Text>
+                        {memberNames.map((name, index) => (
+                            <Text key={index} style={styles.memberEmail}>- {name}</Text>
                         ))}
                     </View>
                 )}
@@ -151,6 +139,7 @@ export default function ManageGroups() {
                     style={styles.removeButton}
                     onPress={() => handleRemoveGroup(item.id)}
                 >
+                    <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
                     <Text style={styles.removeButtonText}>Remove</Text>
                 </TouchableOpacity>
             </View>
@@ -159,45 +148,62 @@ export default function ManageGroups() {
 
     if (loading) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color="#0057D8" />
+            <LinearGradient colors={["#1E3A8A", "#3B82F6"]} style={styles.center}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
                 <Text style={styles.loadingText}>Loading Groups...</Text>
-            </View>
+            </LinearGradient>
         );
     }
 
     if (error) {
         return (
-            <View style={styles.center}>
+            <LinearGradient colors={["#1E3A8A", "#3B82F6"]} style={styles.center}>
                 <Text style={styles.errorText}>{error}</Text>
                 <TouchableOpacity style={styles.retryButton} onPress={fetchGroups}>
                     <Text style={styles.retryButtonText}>Retry</Text>
                 </TouchableOpacity>
-            </View>
+            </LinearGradient>
         );
     }
 
     return (
-        <View style={styles.container}>
+        <LinearGradient colors={["#1E3A8A", "#3B82F6"]} style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.title}>Manage Groups</Text>
             </View>
             <View style={styles.formContainer}>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Enter group name"
-                    value={newGroup.name}
-                    onChangeText={(text) => setNewGroup({ ...newGroup, name: text })}
-                />
-                <TextInput
-                    style={styles.input}
-                    placeholder="Enter admin email"
-                    value={newGroup.admin_email}
-                    onChangeText={(text) => setNewGroup({ ...newGroup, admin_email: text })}
-                    keyboardType="email-address"
-                />
+                <View style={styles.inputWrapper}>
+                    <Ionicons name="people-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Group Name"
+                        value={newGroup.name}
+                        onChangeText={(text) => setNewGroup({ ...newGroup, name: text })}
+                        placeholderTextColor="#94A3B8"
+                    />
+                </View>
+                <View style={styles.inputWrapper}>
+                    <Ionicons name="mail-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Admin Email"
+                        value={newGroup.admin_email}
+                        onChangeText={(text) => setNewGroup({ ...newGroup, admin_email: text })}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        placeholderTextColor="#94A3B8"
+                    />
+                </View>
                 <TouchableOpacity style={styles.addButton} onPress={handleAddGroup}>
-                    <Text style={styles.addButtonText}>Add Group</Text>
+                    <LinearGradient
+                        colors={["#10B981", "#22C55E"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.buttonGradient}
+                    >
+                        <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" style={styles.buttonIcon} />
+                        <Text style={styles.addButtonText}>Add Group</Text>
+                    </LinearGradient>
                 </TouchableOpacity>
             </View>
             <FlatList
@@ -207,129 +213,176 @@ export default function ManageGroups() {
                 contentContainerStyle={styles.listContent}
                 ListEmptyComponent={
                     <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No groups found.</Text>
+                        <Ionicons name="folder-open-outline" size={60} color="#64748B" />
+                        <Text style={styles.emptyText}>No groups found</Text>
                     </View>
                 }
             />
-        </View>
+        </LinearGradient>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#f5f5f5",
     },
     header: {
-        paddingTop: 20,
-        paddingBottom: 10,
-        backgroundColor: "#0057D8",
+        paddingTop: 40,
+        paddingBottom: 20,
         alignItems: "center",
+        backgroundColor: "transparent",
     },
     title: {
-        fontSize: 24,
-        fontWeight: "bold",
-        color: "#fff",
+        fontSize: 28,
+        fontWeight: "700",
+        color: "#FFFFFF",
+        fontFamily: "System",
     },
     formContainer: {
-        backgroundColor: "#fff",
-        margin: 10,
-        padding: 15,
-        borderRadius: 10,
+        backgroundColor: "#FFFFFF",
+        marginHorizontal: 16,
+        marginBottom: 16,
+        padding: 20,
+        borderRadius: 16,
         shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 2,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+        elevation: 10,
+    },
+    inputWrapper: {
+        flexDirection: "row",
+        alignItems: "center",
+        borderColor: "#D1D5DB",
+        borderWidth: 1,
+        borderRadius: 12,
+        backgroundColor: "#F9FAFB",
+        marginBottom: 16,
+    },
+    inputIcon: {
+        marginLeft: 12,
     },
     input: {
+        flex: 1,
         height: 50,
-        borderColor: "#ccc",
-        borderWidth: 1,
-        borderRadius: 5,
-        paddingHorizontal: 10,
-        marginBottom: 10,
+        paddingHorizontal: 12,
         fontSize: 16,
-        backgroundColor: "#fff",
+        color: "#1F2937",
+        fontFamily: "System",
     },
     addButton: {
-        padding: 10,
-        backgroundColor: "#0057D8",
-        borderRadius: 5,
+        borderRadius: 12,
+        overflow: "hidden",
+    },
+    buttonGradient: {
+        flexDirection: "row",
+        paddingVertical: 14,
         alignItems: "center",
+        justifyContent: "center",
+    },
+    buttonIcon: {
+        marginRight: 8,
     },
     addButtonText: {
-        color: "#fff",
+        color: "#FFFFFF",
         fontSize: 16,
-        fontWeight: "bold",
+        fontWeight: "600",
+        fontFamily: "System",
     },
     groupCard: {
-        backgroundColor: "#fff",
-        margin: 10,
-        borderRadius: 10,
-        padding: 15,
+        backgroundColor: "#FFFFFF",
+        marginHorizontal: 16,
+        marginBottom: 12,
+        borderRadius: 16,
+        padding: 16,
         shadowColor: "#000",
-        shadowOpacity: 0.1,
         shadowOffset: { width: 0, height: 4 },
-        elevation: 2,
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    groupHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
     },
     groupName: {
         fontSize: 18,
-        fontWeight: "bold",
-        color: "#333",
+        fontWeight: "600",
+        color: "#1F2937",
+        fontFamily: "System",
     },
     groupAdmin: {
         fontSize: 14,
-        color: "#666",
-        marginTop: 5,
+        color: "#64748B",
+        marginTop: 8,
+        fontFamily: "System",
     },
     memberDetails: {
-        marginTop: 10,
-        padding: 10,
-        backgroundColor: "#f9f9f9",
-        borderRadius: 5,
+        marginTop: 12,
+        padding: 12,
+        backgroundColor: "#F9FAFB",
+        borderRadius: 8,
     },
     memberCount: {
         fontSize: 14,
-        fontWeight: "bold",
-        color: "#333",
+        fontWeight: "600",
+        color: "#1F2937",
+        fontFamily: "System",
     },
-    memberEmail: {
+    memberEmail: {  // Kept name for consistency, but now displays names
         fontSize: 14,
-        color: "#555",
-        marginTop: 5,
+        color: "#64748B",
+        marginTop: 4,
+        fontFamily: "System",
     },
     removeButton: {
-        marginTop: 10,
-        padding: 10,
-        backgroundColor: "#DC3545",
-        borderRadius: 5,
+        flexDirection: "row",
+        marginTop: 12,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        backgroundColor: "#EF4444",
+        borderRadius: 8,
         alignItems: "center",
+        justifyContent: "center",
     },
     removeButtonText: {
-        color: "#fff",
-        fontSize: 16,
+        color: "#FFFFFF",
+        fontSize: 14,
+        fontWeight: "600",
+        marginLeft: 8,
+        fontFamily: "System",
+    },
+    center: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
     },
     loadingText: {
-        marginTop: 10,
+        marginTop: 12,
         fontSize: 16,
-        color: "#333",
+        fontWeight: "500",
+        color: "#FFFFFF",
+        fontFamily: "System",
     },
     errorText: {
         fontSize: 16,
-        color: "red",
+        color: "#FFFFFF",
         textAlign: "center",
         marginBottom: 20,
+        fontFamily: "System",
     },
     retryButton: {
-        marginTop: 10,
-        padding: 10,
-        backgroundColor: "#ff9900",
-        borderRadius: 5,
-        alignItems: "center",
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        backgroundColor: "#F59E0B",
+        borderRadius: 8,
     },
     retryButtonText: {
-        color: "#fff",
+        color: "#FFFFFF",
         fontSize: 16,
+        fontWeight: "600",
+        fontFamily: "System",
     },
     emptyContainer: {
         flex: 1,
@@ -339,12 +392,10 @@ const styles = StyleSheet.create({
     },
     emptyText: {
         fontSize: 18,
-        color: "#333",
-    },
-    center: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
+        fontWeight: "500",
+        color: "#FFFFFF",
+        marginTop: 12,
+        fontFamily: "System",
     },
     listContent: {
         paddingBottom: 20,

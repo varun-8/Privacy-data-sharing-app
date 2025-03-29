@@ -1,3 +1,18 @@
 2025-03-28 03:26:34,979 - INFO - Starting file cleanup service with interval 10 seconds...
 2025-03-28 03:27:48,520 - INFO - Starting file cleanup service with interval 10 seconds...
 2025-03-28 03:34:25,022 - INFO - Starting file cleanup service with interval 10 seconds...
+2025-03-28 10:22:00,688 - INFO - Starting file cleanup service with interval 10 seconds...
+2025-03-28 10:22:01,822 - INFO - Deleted file from filesystem: C:\Users\varun\OneDrive\Desktop\projectsec\uploads\IMG_20250328_014436.jpg_1743113555.084159
+2025-03-28 10:22:01,913 - INFO - Deleted file metadata from MongoDB: 67e5cd536a9daf41841e631d
+2025-03-28 10:22:01,914 - INFO - Cleaned up 1 expired files in this cycle
+2025-03-28 10:26:44,612 - INFO - Deleted file from filesystem: C:\Users\varun\OneDrive\Desktop\projectsec\uploads\Screenshot_2025-03-28-11-41-34-134_host.exp.exponent.jpg.enc
+2025-03-28 10:26:44,692 - INFO - Deleted file metadata from MongoDB: 67e62ad7133857464668016b
+2025-03-28 10:26:44,693 - INFO - Cleaned up 1 expired files in this cycle
+2025-03-28 22:14:40,524 - INFO - Starting file cleanup service with interval 10 seconds...
+2025-03-28 22:14:41,407 - INFO - Deleted file from filesystem: C:\Users\varun\OneDrive\Desktop\projectsec\uploads\Finance exam answer.pdf_1743139061.137933
+2025-03-28 22:14:41,471 - INFO - Deleted file metadata from MongoDB: 67e630f57ca434f16092aa90
+2025-03-28 22:14:41,475 - INFO - Deleted file from filesystem: C:\Users\varun\OneDrive\Desktop\projectsec\uploads\Screenshot_2025-03-28-16-13-22-410_host.exp.exponent.jpg.enc
+2025-03-28 22:14:41,540 - INFO - Deleted file metadata from MongoDB: 67e63607da8ec7fc9adc2fc1
+2025-03-28 22:14:41,544 - INFO - Deleted file from filesystem: C:\Users\varun\OneDrive\Desktop\projectsec\uploads\IMG-20250328-WA0002.jpg.enc
+2025-03-28 22:14:41,609 - INFO - Deleted file metadata from MongoDB: 67e6d088f393ed9851706b2d
+2025-03-28 22:14:41,610 - INFO - Cleaned up 3 expired files in this cycle

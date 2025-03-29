@@ -15,6 +15,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { urlContext } from "../../urlContext";
 import { userContext } from "../../userContext";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system"; // For local file storage
+import { encode as base64Encode } from "base64-arraybuffer"; // Import base64 encoder
 
 export default function SeeFiles() {
   const route = useRoute();
@@ -35,7 +37,7 @@ export default function SeeFiles() {
       const res = await axios.get(`${url}/getfiles/${gid}`, { timeout: 10000 });
       const files = res.data.files || [];
       setData(files);
-      setFilteredData(files); // Initially, filtered data matches full data
+      setFilteredData(files);
     } catch (error) {
       console.error("Error fetching files:", error.response?.data || error.message);
       Alert.alert("Error", "Failed to fetch files. Please try again.");
@@ -48,7 +50,7 @@ export default function SeeFiles() {
     fetchData();
   }, [gid]);
 
-  const handleDownload = async (fid) => {
+  const handleEmailDownload = async (fid) => {
     try {
       const res = await axios.get(`${url}/download/${fid}/${cuser}`, { timeout: 15000 });
       if (res.status === 200) {
@@ -67,6 +69,33 @@ export default function SeeFiles() {
         Alert.alert("Error", error.response.data.error || "Failed to process download.");
       } else {
         Alert.alert("Error", "Network issue. Please check your connection and try again.");
+      }
+    }
+  };
+
+  const handleLocalDownload = async (fid, fileName) => {
+    try {
+      const response = await axios.get(`${url}/download-local/${fid}`, {
+        responseType: "arraybuffer", // Handle binary data
+        timeout: 15000,
+      });
+
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+      const base64Data = base64Encode(response.data); // Convert ArrayBuffer to Base64
+
+      await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      Alert.alert("Success", `File stored locally at: ${fileUri}`);
+    } catch (error) {
+      console.error("Local download error:", error.response?.data || error.message);
+      if (error.code === "ECONNABORTED") {
+        Alert.alert("Error", "Download took too long. Please try again.");
+      } else if (error.response) {
+        Alert.alert("Error", error.response.data.error || "Failed to store file locally.");
+      } else {
+        Alert.alert("Error", "Network issue or file save failed. Please try again.");
       }
     }
   };
@@ -96,20 +125,38 @@ export default function SeeFiles() {
           {new Date(item.upload_date).toLocaleDateString()}
         </Text>
       </View>
-      <TouchableOpacity
-        style={styles.downloadButton}
-        onPress={() => handleDownload(item._id)}
-      >
-        <LinearGradient
-          colors={["#4299E1", "#7F9CF5"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.downloadGradient}
+      <View style={styles.buttonContainer}>
+        {/* Email Download Button */}
+        <TouchableOpacity
+          style={styles.downloadButton}
+          onPress={() => handleEmailDownload(item._id)}
         >
-          <Ionicons name="download-outline" size={18} color="#FFF" />
-          <Text style={styles.buttonText}>Download</Text>
-        </LinearGradient>
-      </TouchableOpacity>
+          <LinearGradient
+            colors={["#4299E1", "#7F9CF5"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.downloadGradient}
+          >
+            <Ionicons name="mail-outline" size={18} color="#FFF" />
+            <Text style={styles.buttonText}>Email</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+        {/* Local Store Button */}
+        <TouchableOpacity
+          style={styles.downloadButton}
+          onPress={() => handleLocalDownload(item._id, item.file_name)}
+        >
+          <LinearGradient
+            colors={["#48BB78", "#68D391"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.downloadGradient}
+          >
+            <Ionicons name="save-outline" size={18} color="#FFF" />
+            <Text style={styles.buttonText}>Store</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -264,14 +311,19 @@ const styles = StyleSheet.create({
     color: "#A0AEC0",
     fontFamily: "System",
   },
+  buttonContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   downloadButton: {
     borderRadius: 20,
+    marginLeft: 8,
   },
   downloadGradient: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     borderRadius: 20,
     elevation: 2,
     shadowColor: "#000",

@@ -22,4 +22,5 @@ groups_collection = db["groups"]
 join_collection = db["joinrequests"]
 files_collection = db["files"]
 failed_logins_collection = db["failed_logins"]
-    
+messages_collection = db["messages"]  # New collection for messages
+settings_collection = db["settings"]

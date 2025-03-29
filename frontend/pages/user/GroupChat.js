@@ -7,14 +7,12 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import * as DocumentPicker from "expo-document-picker";
 import { urlContext } from "../../urlContext";
 import { userContext } from "../../userContext";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,113 +24,85 @@ export default function GroupChat() {
   const { url } = useContext(urlContext);
   const { cuser } = useContext(userContext);
 
-  const [data, setData] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [userNames, setUserNames] = useState({}); // { email: { name, isAdmin } }
   const [loading, setLoading] = useState(true);
-  const [file, setFile] = useState(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [expandedFile, setExpandedFile] = useState(null);
   const flatListRef = useRef(null);
 
-  const fetchData = async () => {
+  // Fetch user name and admin status by email
+  const fetchUserName = async (email) => {
+    if (userNames[email]?.name) return userNames[email].name; // Return cached name if available
+    try {
+      const res = await axios.get(`${url}/getusername/${email}`);
+      const userName = res.data.name || email.split('@')[0];
+      const isAdmin = res.data.isAdmin || false; // Assume backend provides this field
+      setUserNames((prev) => ({
+        ...prev,
+        [email]: { name: userName, isAdmin },
+      }));
+      return userName;
+    } catch (error) {
+      console.error(`Error fetching username for ${email}:`, error.response?.data || error.message);
+      setUserNames((prev) => ({
+        ...prev,
+        [email]: { name: email.split('@')[0], isAdmin: false },
+      }));
+      return email.split('@')[0];
+    }
+  };
+
+  // Fetch messages and user info
+  const fetchMessages = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${url}/getfiles/${gid}`, { timeout: 10000 });
-      console.log("Fetched data:", res.data);
-      setData(res.data.files || []);
+      const res = await axios.get(`${url}/getchatmessages/${gid}`, { timeout: 10000 });
+      const messagesData = res.data.messages || [];
+      setMessages(messagesData);
+
+      const uniqueUsers = [...new Set(messagesData.map((msg) => msg.user))];
+      for (const userEmail of uniqueUsers) {
+        if (!userNames[userEmail]?.name) {
+          await fetchUserName(userEmail);
+        }
+      }
     } catch (error) {
-      console.error("Error fetching files:", error.response?.data || error.message);
-      Alert.alert("Error", "Failed to fetch group data. Please try again.");
+      console.error("Error fetching messages:", error.response?.data || error.message);
+      alert("Failed to fetch messages. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 5000);
+    return () => clearInterval(interval);
   }, [gid]);
 
-  const handleDownload = async (fid) => {
-    try {
-      // Increase timeout to handle slow email sending
-      const res = await axios.get(`${url}/download/${fid}/${cuser}`, { timeout: 15000 });
-      if (res.status === 200) {
-        Alert.alert("Success", "File has been sent to your email!");
-      } else {
-        throw new Error("Unexpected response from server");
-      }
-    } catch (error) {
-      console.error("Download error:", error.response?.data || error.message);
-      // Handle specific cases
-      if (error.code === "ECONNABORTED") {
-        // Timeout case: email might still be sent
-        Alert.alert(
-          "Processing",
-          "The request took longer than expected. Check your email for the file."
-        );
-      } else if (error.response) {
-        // Server returned an error response
-        Alert.alert("Error", error.response.data.error || "Failed to process download.");
-      } else {
-        // Network or other unexpected errors
-        Alert.alert("Error", "Network issue. Please check your connection and try again.");
-      }
-    }
-  };
-
-  const pickFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ type: "*/*" });
-      if (!result.canceled && result.assets?.length > 0) {
-        setFile(result.assets[0]);
-      }
-    } catch (error) {
-      console.error("Error picking file:", error);
-      Alert.alert("Error", "Failed to pick a file.");
-    }
-  };
-
-  const cancelFile = () => setFile(null);
-
-  const uploadFile = async () => {
-    if (!message.trim() && !file) {
-      Alert.alert("Error", "Please add a message or pick a file.");
+  // Send message
+  const sendMessage = async () => {
+    if (!message.trim()) {
+      alert("Please type a message.");
       return;
     }
 
     setSending(true);
-    const formData = new FormData();
-    if (file) {
-      formData.append("file", {
-        uri: file.uri,
-        name: file.name,
-        type: file.mimeType || "application/octet-stream",
-      });
-    }
-    formData.append("group_id", gid);
-    formData.append("user", cuser);
-    if (message.trim()) formData.append("message", message);
-
     try {
-      console.log(`Uploading to: ${url}/fileupload`);
-      const res = await axios.post(`${url}/fileupload`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        timeout: 10000,
+      await axios.post(`${url}/sendchatmessage`, {
+        group_id: gid,
+        user: cuser,
+        message,
       });
-      console.log("Upload response:", res.data);
       setMessage("");
-      setFile(null);
-      fetchData();
+      fetchMessages();
     } catch (error) {
-      console.error("Upload error:", error.response?.data || error.message);
-      Alert.alert("Error", "Failed to upload file/message.");
+      console.error("Error sending message:", error.response?.data || error.message);
+      alert("Failed to send message.");
     } finally {
       setSending(false);
     }
-  };
-
-  const toggleFileExpansion = (id) => {
-    setExpandedFile(expandedFile === id ? null : id);
   };
 
   const scrollToBottom = () => {
@@ -140,93 +110,77 @@ export default function GroupChat() {
   };
 
   const renderItem = ({ item, index }) => {
-    const isExpanded = expandedFile === item._id;
     const isFirstMessageOfDay =
-      index === data.length - 1 ||
-      new Date(data[index + 1].upload_date).toDateString() !==
-        new Date(item.upload_date).toDateString();
+      index === messages.length - 1 ||
+      new Date(messages[index + 1].timestamp).toDateString() !==
+        new Date(item.timestamp).toDateString();
+    const isMine = item.user === cuser;
+    const userInfo = userNames[item.user] || { name: item.user.split('@')[0], isAdmin: false };
+    const displayName = userInfo.name;
 
     return (
       <>
         {isFirstMessageOfDay && (
           <View style={styles.dateSeparator}>
             <Text style={styles.dateText}>
-              {new Date(item.upload_date).toLocaleDateString()}
+              {new Date(item.timestamp).toLocaleDateString()}
             </Text>
           </View>
         )}
-        <View style={styles.messageContainer}>
-          <View style={styles.messageRow}>
-            <Text style={styles.userName}>{item.user_name}</Text>
-            <Text style={styles.timestamp}>
-              {new Date(item.upload_date).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+        <View style={[styles.messageContainer, isMine && styles.myMessageContainer]}>
+          <View style={styles.userNameContainer}>
+            <Text style={[styles.userName, isMine && styles.myUserName]}>
+              {displayName}
+            </Text>
+            {userInfo.isAdmin && (
+              <Ionicons
+                name="checkmark-circle"
+                size={16}
+                color={isMine ? "#A5B4FC" : "#94A3B8"}
+                style={styles.adminTick}
+              />
+            )}
+          </View>
+          <View style={[styles.messageBubble, isMine && styles.myMessageBubble]}>
+            <Text style={[styles.messageText, isMine && styles.myMessageText]}>
+              {item.message}
             </Text>
           </View>
-          {item.message && <Text style={styles.messageText}>{item.message}</Text>}
-          {item.file_name && (
-            <TouchableOpacity
-              style={styles.fileContainer}
-              onPress={() => toggleFileExpansion(item._id)}
-            >
-              <Ionicons name="document-outline" size={18} color="#4299E1" />
-              <Text style={styles.fileName} numberOfLines={isExpanded ? 0 : 1}>
-                {item.file_name}
-              </Text>
-              <Ionicons
-                name={isExpanded ? "chevron-up" : "chevron-down"}
-                size={18}
-                color="#4299E1"
-              />
-            </TouchableOpacity>
-          )}
-          {isExpanded && item.file_name && (
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => handleDownload(item._id)}
-            >
-              <LinearGradient
-                colors={["#4299E1", "#7F9CF5"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.downloadGradient}
-              >
-                <Ionicons name="download-outline" size={16} color="#FFF" />
-                <Text style={styles.downloadText}>Download</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
+          <Text style={[styles.timestamp, isMine && styles.myTimestamp]}>
+            {new Date(item.timestamp).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </Text>
         </View>
       </>
     );
   };
 
   return (
-    <LinearGradient colors={["#F7FAFC", "#EDF2F7"]} style={styles.container}>
+    <LinearGradient colors={["#0F172A", "#1E293B"]} style={styles.container}>
       <View style={styles.headerContainer}>
-        <Text style={styles.header}>{name || `Group ${gid || "Unknown"}`}</Text>
-        <TouchableOpacity onPress={fetchData} style={styles.refreshButton}>
-          <Ionicons name="refresh" size={22} color="#4299E1" />
+        <Text style={styles.header}>{name || `Group ${gid || "Chat"}`}</Text>
+        <TouchableOpacity onPress={fetchMessages} style={styles.refreshButton}>
+          <Ionicons name="refresh" size={24} color="#CBD5E1" />
         </TouchableOpacity>
       </View>
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4299E1" />
-          <Text style={styles.loadingText}>Loading Messages...</Text>
+          <ActivityIndicator size="large" color="#CBD5E1" />
+          <Text style={styles.loadingText}>Loading Chat...</Text>
         </View>
-      ) : data.length === 0 ? (
+      ) : messages.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="chatbox-outline" size={50} color="#A0AEC0" />
+          <Ionicons name="chatbubbles-outline" size={60} color="#64748B" />
           <Text style={styles.emptyText}>No messages yet</Text>
         </View>
       ) : (
         <>
           <FlatList
             ref={flatListRef}
-            data={data}
+            data={messages}
             keyExtractor={(item) => item._id.toString()}
             renderItem={renderItem}
             contentContainerStyle={styles.chatList}
@@ -234,33 +188,17 @@ export default function GroupChat() {
             inverted
           />
           <TouchableOpacity style={styles.scrollToBottomButton} onPress={scrollToBottom}>
-            <Ionicons name="chevron-down" size={20} color="#FFF" />
+            <Ionicons name="chevron-down" size={24} color="#FFFFFF" />
           </TouchableOpacity>
         </>
       )}
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
         style={styles.inputContainer}
       >
-        {file && (
-          <View style={styles.filePreview}>
-            <Ionicons name="document-outline" size={18} color="#4299E1" />
-            <Text style={styles.filePreviewText}>{file.name}</Text>
-            <TouchableOpacity onPress={cancelFile}>
-              <Ionicons name="close" size={18} color="#E53E3E" />
-            </TouchableOpacity>
-          </View>
-        )}
         <View style={styles.inputRow}>
-          <TouchableOpacity
-            style={styles.attachButton}
-            onPress={pickFile}
-            disabled={sending}
-          >
-            <Ionicons name="attach" size={22} color="#4299E1" />
-          </TouchableOpacity>
           <TextInput
             style={styles.messageInput}
             placeholder="Type your message..."
@@ -268,23 +206,23 @@ export default function GroupChat() {
             onChangeText={setMessage}
             multiline
             editable={!sending}
-            placeholderTextColor="#A0AEC0"
+            placeholderTextColor="#94A3B8"
           />
           <TouchableOpacity
             style={styles.sendButton}
-            onPress={uploadFile}
+            onPress={sendMessage}
             disabled={sending}
           >
             <LinearGradient
-              colors={sending ? ["#A0AEC0", "#A0AEC0"] : ["#4299E1", "#7F9CF5"]}
+              colors={sending ? ["#6B7280", "#6B7280"] : ["#10B981", "#22C55E"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.sendGradient}
             >
               {sending ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Ionicons name="send" size={18} color="#FFF" />
+                <Ionicons name="send" size={20} color="#FFFFFF" />
               )}
             </LinearGradient>
           </TouchableOpacity>
@@ -297,6 +235,7 @@ export default function GroupChat() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#F8FAFC",
   },
   headerContainer: {
     flexDirection: "row",
@@ -304,108 +243,86 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#1E293B",
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    elevation: 2,
+    borderBottomColor: "#334155",
+    elevation: 4,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   header: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#2D3748",
+    color: "#FFFFFF",
     fontFamily: "System",
   },
   refreshButton: {
     padding: 8,
-    backgroundColor: "#EDF2F7",
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    backgroundColor: "#334155",
   },
   chatList: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 120,
+    paddingBottom: 100,
   },
   messageContainer: {
-    padding: 12,
-    backgroundColor: "#F7FAFC",
-    borderRadius: 6,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    marginBottom: 16,
+    alignItems: "flex-start",
   },
-  messageRow: {
+  myMessageContainer: {
+    alignItems: "flex-end",
+  },
+  userNameContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   userName: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#4299E1",
-    fontFamily: "System",
+    color: "#94A3B8",
+  },
+  myUserName: {
+    color: "#A5B4FC",
+  },
+  adminTick: {
+    marginLeft: 4,
+  },
+  messageBubble: {
+    backgroundColor: "#E2E8F0",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    maxWidth: "75%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  myMessageBubble: {
+    backgroundColor: "#22C55E",
+    borderTopRightRadius: 4,
   },
   messageText: {
     fontSize: 16,
-    color: "#2D3748",
+    color: "#1F2937",
     lineHeight: 22,
     fontFamily: "System",
   },
-  fileContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: "#EDF2F7",
-    borderRadius: 6,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  fileName: {
-    fontSize: 14,
-    color: "#2D3748",
-    flex: 1,
-    marginHorizontal: 8,
-    fontFamily: "System",
-  },
-  downloadButton: {
-    marginTop: 8,
-    alignSelf: "flex-start",
-  },
-  downloadGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  downloadText: {
-    color: "#FFF",
-    fontSize: 14,
-    fontWeight: "600",
-    marginLeft: 8,
-    fontFamily: "System",
+  myMessageText: {
+    color: "#FFFFFF",
   },
   timestamp: {
     fontSize: 12,
-    color: "#718096",
-    fontFamily: "System",
+    color: "#64748B",
+    marginTop: 4,
+  },
+  myTimestamp: {
+    color: "#A5B4FC",
   },
   dateSeparator: {
     alignItems: "center",
@@ -413,8 +330,9 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontSize: 12,
-    color: "#718096",
-    backgroundColor: "#E2E8F0",
+    fontWeight: "500",
+    color: "#FFFFFF",
+    backgroundColor: "#475569",
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
@@ -428,8 +346,8 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: "#4299E1",
     fontWeight: "500",
+    color: "#CBD5E1",
     fontFamily: "System",
   },
   emptyContainer: {
@@ -438,8 +356,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   emptyText: {
-    fontSize: 16,
-    color: "#718096",
+    fontSize: 18,
+    fontWeight: "500",
+    color: "#64748B",
     marginTop: 12,
     fontFamily: "System",
   },
@@ -447,62 +366,40 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 80,
     right: 16,
-    backgroundColor: "#4299E1",
+    backgroundColor: "#475569",
     padding: 10,
     borderRadius: 20,
     elevation: 4,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
   },
   inputContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#1E293B",
     borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  filePreview: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 8,
-    backgroundColor: "#EDF2F7",
-    borderRadius: 6,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  filePreviewText: {
-    fontSize: 14,
-    color: "#2D3748",
-    flex: 1,
-    marginHorizontal: 8,
-    fontFamily: "System",
+    borderTopColor: "#334155",
   },
   inputRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#EDF2F7",
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 25,
     padding: 8,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  attachButton: {
-    padding: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   messageInput: {
     flex: 1,
     fontSize: 16,
-    color: "#2D3748",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    color: "#1F2937",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     maxHeight: 100,
     fontFamily: "System",
   },
@@ -510,12 +407,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   sendGradient: {
-    padding: 10,
+    padding: 12,
     borderRadius: 20,
     elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
 });
