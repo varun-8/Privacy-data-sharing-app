@@ -18,23 +18,26 @@ export default function ManageUsers() {
   const { url } = useContext(urlContext);
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
-  const [newUser, setNewUser] = useState({ email: "", role: "user" });
+  const [newUser, setNewUser] = useState({ email: "", name: "", role: "user" });
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState(null);
   const [emailError, setEmailError] = useState("");
+  const [nameError, setNameError] = useState("");
 
   const fetchUsers = async () => {
     try {
       setLoading(true);
       setError(null);
       const res = await axios.get(`${url}/users`, { timeout: 5000 });
+      console.log("Fetched users:", JSON.stringify(res.data, null, 2));
       const userList = res.data.users || [];
       setUsers(userList);
       setFilteredUsers(userList);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to load users.");
+      console.error("Error fetching users:", err);
     } finally {
       setLoading(false);
     }
@@ -50,12 +53,16 @@ export default function ManageUsers() {
   };
 
   const handleAddUser = async () => {
-    if (!newUser.email || !newUser.role) {
-      Alert.alert("Missing Fields", "Please enter both email and role.");
+    if (!newUser.email || !newUser.name || !newUser.role) {
+      Alert.alert("Missing Fields", "Please enter email, name, and role.");
       return;
     }
     if (!validateEmail(newUser.email)) {
       setEmailError("Please enter a valid email address.");
+      return;
+    }
+    if (newUser.name.trim().length < 2) {
+      setNameError("Name must be at least 2 characters long.");
       return;
     }
     try {
@@ -65,8 +72,9 @@ export default function ManageUsers() {
         headers: { "Content-Type": "application/json" },
       });
       Alert.alert("Success", res.data.message);
-      setNewUser({ email: "", role: "user" });
+      setNewUser({ email: "", name: "", role: "user" });
       setEmailError("");
+      setNameError("");
       fetchUsers();
     } catch (err) {
       Alert.alert("Error", err.response?.data?.message || "Failed to add user.");
@@ -78,7 +86,7 @@ export default function ManageUsers() {
   const handleRemoveUser = (userId, userName) => {
     Alert.alert(
       "Confirm Removal",
-      `Are you sure you want to remove ${userName}?`,
+      `Are you sure you want to remove ${userName || "this user"}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -108,8 +116,9 @@ export default function ManageUsers() {
     } else {
       const filtered = users.filter(
         (user) =>
-          user.name.toLowerCase().includes(query.toLowerCase()) ||
-          user.role.toLowerCase().includes(query.toLowerCase())
+          (user.name && user.name.toLowerCase().includes(query.toLowerCase())) ||
+          (user.email && user.email.toLowerCase().includes(query.toLowerCase())) ||
+          (user.role && user.role.toLowerCase().includes(query.toLowerCase()))
       );
       setFilteredUsers(filtered);
     }
@@ -134,7 +143,6 @@ export default function ManageUsers() {
   if (error) {
     return (
       <LinearGradient colors={["#1E3A8A", "#3B82F6"]} style={styles.center}>
-        {/* Wrap error string in Text component */}
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={fetchUsers}>
           <Text style={styles.retryButtonText}>Retry</Text>
@@ -156,7 +164,7 @@ export default function ManageUsers() {
         <Ionicons name="search-outline" size={20} color="#94A3B8" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by name or role..."
+          placeholder="Search by name, email, or role..."
           value={searchQuery}
           onChangeText={handleSearch}
           placeholderTextColor="#94A3B8"
@@ -180,6 +188,20 @@ export default function ManageUsers() {
           />
         </View>
         {emailError ? <Text style={styles.errorMessage}>{emailError}</Text> : null}
+        <View style={styles.inputWrapper}>
+          <Ionicons name="person-outline" size={20} color="#94A3B8" style={styles.inputIcon} />
+          <TextInput
+            style={[styles.input, nameError ? styles.inputError : null]}
+            placeholder="User Name"
+            value={newUser.name}
+            onChangeText={(text) => {
+              setNewUser({ ...newUser, name: text });
+              setNameError(text.trim().length >= 2 || text === "" ? "" : "Name must be at least 2 characters");
+            }}
+            placeholderTextColor="#94A3B8"
+          />
+        </View>
+        {nameError ? <Text style={styles.errorMessage}>{nameError}</Text> : null}
         <View style={styles.roleContainer}>
           <Text style={styles.roleLabel}>Role:</Text>
           <TouchableOpacity style={styles.roleButton} onPress={toggleRole}>
@@ -215,12 +237,12 @@ export default function ManageUsers() {
         renderItem={({ item }) => (
           <View style={styles.userCard}>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{item.name}</Text>
-              <Text style={styles.userRole}>{item.role}</Text>
+              <Text style={styles.userName}>{item.name || item.email || "Unnamed User"}</Text>
+              <Text style={styles.userRole}>{item.role || "Unknown Role"}</Text>
             </View>
             <TouchableOpacity
               style={[styles.removeButton, actionLoading && styles.disabledButton]}
-              onPress={() => handleRemoveUser(item.id, item.name)}
+              onPress={() => handleRemoveUser(item.id, item.name || item.email || "Unnamed User")}
               disabled={actionLoading}
             >
               {actionLoading ? (
@@ -239,7 +261,9 @@ export default function ManageUsers() {
           <View style={styles.emptyContainer}>
             <Ionicons name="people-outline" size={60} color="#64748B" />
             <Text style={styles.emptyText}>
-              {searchQuery ? "No users match your search." : "No users found. Add one to get started!"}
+              {searchQuery && searchQuery.trim() !== ""
+                ? "No users match your search."
+                : "No users found. Add one to get started!"}
             </Text>
           </View>
         }

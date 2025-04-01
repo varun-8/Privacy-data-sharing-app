@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 export default function Sdash() {
   const navigation = useNavigation();
   const { url } = useContext(urlContext);
-  const { cuser } = useContext(userContext);
+  const { cuser, setCuser } = useContext(userContext);
 
   const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0 });
   const [failedLoginCount, setFailedLoginCount] = useState(0);
@@ -131,6 +131,39 @@ export default function Sdash() {
     return err.response?.data?.message || `Failed to load ${context}.`;
   };
 
+  // Logout handler with API call
+  const handleLogout = () => {
+    Alert.alert(
+      "Confirm Logout",
+      "Are you sure you want to log out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Logout",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await axios.post(
+                `${url}/logout`,
+                { email: cuser },
+                { timeout: 5000, headers: { "Content-Type": "application/json" } }
+              );
+              console.log(`Logged out ${cuser} successfully`);
+            } catch (err) {
+              console.error("Logout error:", err.response?.data || err.message);
+              Alert.alert("Error", "Failed to logout on server. Proceeding locally.");
+            }
+            setCuser(null);
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "slogin" }], // Redirect to super admin login
+            });
+          },
+        },
+      ]
+    );
+  };
+
   useEffect(() => {
     console.log("cuser in useEffect:", cuser);
     fetchUserName();
@@ -159,18 +192,23 @@ export default function Sdash() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Hello, {userName}</Text>
-        <TouchableOpacity style={styles.warningIconContainer} onPress={handleFailedLoginsPress}>
-          <Ionicons
-            name="warning-outline"
-            size={26}
-            color={failedLoginCount > 0 ? "#DC3545" : "#6C757D"}
-          />
-          {failedLoginCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{failedLoginCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.warningIconContainer} onPress={handleFailedLoginsPress}>
+            <Ionicons
+              name="warning-outline"
+              size={26}
+              color={failedLoginCount > 0 ? "#DC3545" : "#6C757D"}
+            />
+            {failedLoginCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{failedLoginCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={26} color="#DC3545" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Stats Section */}
@@ -312,6 +350,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   title: {
     fontSize: 28,
     fontWeight: "700",
@@ -320,6 +362,7 @@ const styles = StyleSheet.create({
   warningIconContainer: {
     position: "relative",
     padding: 6,
+    marginRight: 10,
   },
   badge: {
     position: "absolute",
@@ -336,6 +379,9 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 10,
     fontWeight: "bold",
+  },
+  logoutButton: {
+    padding: 6,
   },
   statsCard: {
     backgroundColor: "#FFFFFF",

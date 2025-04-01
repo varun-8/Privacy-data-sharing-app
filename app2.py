@@ -12,7 +12,7 @@ from flask_mail import Mail, Message
 from settings import settings_bp
 from db import (superadmin_collection, user_collection, requests_collection, 
                 groups_collection, join_collection, files_collection, 
-                failed_logins_collection, messages_collection,settings_collection)  # Added messages_collection
+                failed_logins_collection, messages_collection,settings_collection,logs_collection)  # Added messages_collection
 from failed_logins import failed_logins_bp
 from ip_management import ip_management_bp, is_ip_blocked
 from groups import groups_bp
@@ -223,9 +223,16 @@ def denyrequests(request_id, user_email):
 def get_users():
     try:
         data = list(user_collection.find({}))
-        users = [{"id": str(row['_id']), "email": row['email'], "role": row.get('role', 'user')} for row in data]
+        users = [{
+            "id": str(row['_id']),
+            "email": row['email'],
+            "name": row.get('name', row['email'].split('@')[0]),  # Include name, fallback to email prefix
+            "role": row.get('role', 'user')
+        } for row in data]
+        logger.info(f"Fetched {len(users)} users")
         return jsonify({'users': users}), 200
     except Exception as e:
+        logger.error(f"Error fetching users: {str(e)}")
         return jsonify({'error': f'Error fetching users: {str(e)}'}), 500
 
 @app.route('/add-user', methods=["POST"])
@@ -806,6 +813,33 @@ def delete_all_files():
     return jsonify({"message": f"Deleted {result.deleted_count} files successfully"}), 200
 
 # Generate API Key
+@app.route('/logout', methods=['POST'])
+def logout():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        
+        user = user_collection.find_one({'email': email})
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        # Use datetime.datetime.utcnow() instead of datetime.utcnow()
+        log_entry = {
+            'email': email,
+            'action': 'logout',
+            'timestamp': datetime.utcnow(),  # Corrected to datetime.utcnow()
+            'ip_address': request.remote_addr
+        }
+        logs_collection.insert_one(log_entry)
+        logger.info(f"User {email} logged out successfully")
+        
+        return jsonify({'message': f'Successfully logged out {email}'}), 200
+    except Exception as e:
+        logger.error(f"Error during logout: {str(e)}")
+        return jsonify({'error': f'Logout failed: {str(e)}'}), 500
 
     
 if __name__ == '__main__':
